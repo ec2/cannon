@@ -1,7 +1,8 @@
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 use wasmi::{
-    AsContext, AsContextMut, Caller, Engine, Func, Linker, Memory, MemoryType, Module, Store,
+    AsContext, AsContextMut, Caller, Engine, Extern, Func, Linker, Memory, MemoryType, Module,
+    Store,
 };
 
 pub type Bytes32 = [u8; 32];
@@ -66,8 +67,11 @@ impl VmState {
     }
 }
 
+/// Creates an implementation of the linker, the thing that binds the API of this wasm runtime to
+/// the implementations of the host functions.
 fn populate_linker(
     mut context: impl AsContextMut<UserState = VmState>,
+    memory: Memory,
 ) -> anyhow::Result<Linker<VmState>> {
     let env_get_storage = Func::wrap(
         &mut context,
@@ -80,8 +84,8 @@ fn populate_linker(
     );
 
     let mut linker = Linker::new();
+    linker.define("env", "memory", memory)?;
     linker.define("env", "get_storage", env_get_storage)?;
-    // linker.define("env", "set_storage", env_set_storage)?;
     Ok(linker)
 }
 
@@ -97,7 +101,45 @@ pub fn execute(ext: Box<dyn Ext>, wasm: &[u8]) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("err: {}", e))?;
     state.deferred_set_memory(memory.clone());
 
-    let linker = populate_linker(&mut store)?;
+    let mut linker = populate_linker(&mut store, memory)?;
+
+    let instance = linker.instantiate(&mut store, &module)?.start(&mut store)?;
+
+    let main = instance
+        .get_export(&store, "entrypoint")
+        .and_then(Extern::into_func)
+        .ok_or_else(|| anyhow::anyhow!("could not find function \"entrypoint\""))?
+        .typed::<(), (), _>(&mut store)?;
+
+    main.call(&mut store, ())?;
 
     Ok(())
+}
+
+mod tests {
+    use std::collections::HashMap;
+    use super::*;
+
+    struct TestExt {
+        storage: HashMap<Bytes32, Bytes32>,
+    }
+
+    impl Ext for TestExt {
+        fn get(&self, key: &Bytes32) -> Bytes32 {
+            self.storage.get(key).cloned().unwrap_or_default()
+        }
+
+        fn set(&mut self, key: &Bytes32, value: &Bytes32) {
+            self.storage.insert(*key, *value);
+        }
+    }
+
+    #[test]
+    fn flipper_simple() {
+        let wasm = include_bytes!(env!("CARGO_CDYLIB_FILE_FLIPPER"));
+        let ext = TestExt {
+            storage: HashMap::new(),
+        };
+        execute(Box::new(ext), wasm).unwrap();
+    }
 }

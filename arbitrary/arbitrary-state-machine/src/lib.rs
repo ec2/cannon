@@ -1,9 +1,10 @@
+#[allow(dead_code)]
+
 use std::collections::HashMap;
 
 use bigint::H256;
 use vm::Bytes32;
 
-#[allow(dead_code)]
 mod vm;
 
 // enum Tx {

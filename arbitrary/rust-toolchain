@@ -1,0 +1,5 @@
+[toolchain]
+channel = "nightly-2022-09-15"
+components = [ "rustfmt", "rustc-dev" ]
+targets = [ "wasm32-unknown-unknown", "mips-unknown-linux-gnu" ]
+profile = "minimal"
