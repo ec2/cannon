@@ -1,5 +1,6 @@
 extern "C" {
     fn get_storage(key_ptr: usize, out_ptr: usize);
+    fn set_storage(key_ptr: usize, value_ptr: usize);
 }
 
 #[no_mangle]
@@ -13,5 +14,9 @@ pub extern "C" fn entrypoint() {
         result[0] = 1;
     } else {
         result[0] = 0;
+    }
+
+    unsafe {
+        set_storage(key.as_ptr() as usize, result.as_ptr() as usize);
     }
 }
