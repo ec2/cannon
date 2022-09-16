@@ -1,5 +1,6 @@
 [workspace]
 members = [
     "arbitrary-state-machine",
+    "contracts/arbitrary-sdk",
     "contracts/flipper",
 ]
