@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 wasmi = "0.16.0"
 anyhow = "*"
+ethereum-trie = "0.5.0"
+ethereum-bigint = "0.2.9"

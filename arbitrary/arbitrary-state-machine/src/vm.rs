@@ -14,6 +14,9 @@ pub trait Ext {
     fn set(&mut self, key: &Bytes32, value: &Bytes32);
 }
 
+// get calls state trie
+// set sets trie
+
 struct VmStateInner {
     ext: Box<dyn Ext>,
     memory: Option<Memory>,
