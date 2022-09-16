@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefMut, RefCell};
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 use wasmi::{
     AsContext, AsContextMut, Caller, Engine, Extern, Func, Linker, Memory, MemoryType, Module,
@@ -132,8 +132,8 @@ pub fn execute(ext: Box<dyn Ext>, wasm: &[u8]) -> anyhow::Result<()> {
 }
 
 mod tests {
-    use std::collections::HashMap;
     use super::*;
+    use std::collections::HashMap;
 
     struct TestExtInner {
         storage: HashMap<Bytes32, Bytes32>,
@@ -144,13 +144,20 @@ mod tests {
 
     impl TestExt {
         fn new() -> Self {
-            TestExt(Rc::new(RefCell::new(TestExtInner { storage: HashMap::new() })))
+            TestExt(Rc::new(RefCell::new(TestExtInner {
+                storage: HashMap::new(),
+            })))
         }
     }
 
     impl Ext for TestExt {
         fn get(&self, key: &Bytes32) -> Bytes32 {
-            self.0.borrow().storage.get(key).cloned().unwrap_or_default()
+            self.0
+                .borrow()
+                .storage
+                .get(key)
+                .cloned()
+                .unwrap_or_default()
         }
 
         fn set(&mut self, key: &Bytes32, value: &Bytes32) {

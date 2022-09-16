@@ -19,7 +19,6 @@ dependencies = [
  "anyhow",
  "ethereum-bigint",
  "ethereum-trie",
- "flipper",
  "wasmi",
 ]
 
