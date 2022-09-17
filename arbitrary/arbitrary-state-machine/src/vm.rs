@@ -216,7 +216,8 @@ mod tests {
 
     #[test]
     fn flipper_simple() {
-        let wasm = include_bytes!(env!("CARGO_CDYLIB_FILE_FLIPPER"));
+        let wasm =
+            include_bytes!("../../contracts/target/wasm32-unknown-unknown/release/flipper.wasm");
         let ext = TestExt::new();
         execute(Box::new(ext.clone()), wasm, vec![1u8; 32]).unwrap();
 

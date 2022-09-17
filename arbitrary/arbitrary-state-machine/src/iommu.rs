@@ -3,8 +3,8 @@
 
 use bigint::H256;
 use once_cell::sync::Lazy;
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// The address of the input hash.
 const PTR_INPUT_HASH: usize = 0x30000000;
@@ -48,9 +48,8 @@ pub fn preimage(hash: H256) -> Option<Vec<u8>> {
     //
     // Under MIPS this is running exclusively in single-threaded mode. We could've avoided using
     // a Mutex, but it seems to be fine. Uncontended use is just atomic writes.
-    static PREIMAGE_CACHE: Lazy<Mutex<HashMap<H256, Vec<u8>>>> = Lazy::new(|| {
-        Mutex::new(HashMap::new())
-    });
+    static PREIMAGE_CACHE: Lazy<Mutex<HashMap<H256, Vec<u8>>>> =
+        Lazy::new(|| Mutex::new(HashMap::new()));
 
     // Check if the preimage is already cached.
     unsafe {

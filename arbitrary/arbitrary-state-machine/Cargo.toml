@@ -15,5 +15,3 @@ hex = "0.4.2"
 libc = "0.2.132"
 once_cell = "1.14"
 
-[dev-dependencies]
-flipper = { path = "../contracts/flipper", artifact = "cdylib", target = "wasm32-unknown-unknown" }

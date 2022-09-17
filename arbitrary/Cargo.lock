@@ -9,17 +9,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
 
 [[package]]
-name = "arbitrary-sdk"
-version = "0.1.0"
-
-[[package]]
 name = "arbitrary-state-machine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "ethereum-bigint",
  "ethereum-trie",
- "flipper",
  "hex",
  "libc",
  "once_cell",
@@ -116,13 +111,6 @@ dependencies = [
  "ethereum-bigint",
  "ethereum-rlp",
  "sha3",
-]
-
-[[package]]
-name = "flipper"
-version = "0.1.0"
-dependencies = [
- "arbitrary-sdk",
 ]
 
 [[package]]
@@ -356,3 +344,10 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]

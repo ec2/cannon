@@ -1,6 +1,7 @@
 [workspace]
 members = [
+    # For `cargo xtask` commands.
+    "xtask",
+
     "arbitrary-state-machine",
-    "contracts/arbitrary-sdk",
-    "contracts/flipper",
 ]
