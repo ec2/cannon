@@ -9,6 +9,7 @@ fn main() -> Result<()> {
     let task = env::args().nth(1);
     match task.as_ref().map(|it| it.as_str()) {
         Some("test") => test()?,
+        Some("build-image") => build_image()?,
         _ => print_help(),
     }
     Ok(())
@@ -18,6 +19,7 @@ fn print_help() {
     eprintln!(
         "Tasks:
 test            builds the contracts and runs the tests
+build-image     builds the MIPS image ready for use in prover and verifier
 "
     )
 }
@@ -37,6 +39,18 @@ fn test() -> Result<()> {
         .status()?;
     if !status.success() {
         bail!("testing the contracts failed");
+    }
+    Ok(())
+}
+
+fn build_image() -> Result<()> {
+    let cargo = env::var("CROSS").unwrap_or_else(|_| "cross".to_string());
+    let status = Command::new(cargo.clone())
+        .current_dir(contracts_root())
+        .args(&["build", "--release", "--target", "mips-unknown-linux-gnu"])
+        .status()?;
+    if !status.success() {
+        bail!("building cargo build --release");
     }
     Ok(())
 }
