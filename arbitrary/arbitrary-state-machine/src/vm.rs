@@ -98,7 +98,7 @@ fn populate_linker(
 
     let env_set_storage = Func::wrap(
         &mut context,
-        |mut caller: Caller<'_, VmState>, key_ptr: u32, value_ptr: u32| {
+        |caller: Caller<'_, VmState>, key_ptr: u32, value_ptr: u32| {
             let state = caller.host_data().clone();
             let key = state.read_bytes32(&caller, key_ptr);
             let value = state.read_bytes32(&caller, value_ptr);

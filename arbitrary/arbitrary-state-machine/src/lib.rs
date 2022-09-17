@@ -1,11 +1,11 @@
-#[allow(dead_code)]
+#![allow(dead_code)]
 use std::collections::HashMap;
 
 use bigint::H256;
 use sha3::{Digest, Sha3_256};
 use trie::Change;
-use vm::{Bytes32, Ext};
-#[allow(dead_code)]
+use vm::Bytes32;
+
 mod vm;
 
 pub enum Tx {
@@ -30,7 +30,7 @@ impl Block {
         Self { txns, state_root }
     }
 }
-pub fn execute(block: Block, mut pre_state: GlobalState) -> GlobalState {
+pub fn execute(block: Block, pre_state: GlobalState) -> GlobalState {
     let mut post_state: GlobalState = pre_state;
     for tx in block.txns {
         match tx {
