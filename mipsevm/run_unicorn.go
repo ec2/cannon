@@ -82,6 +82,7 @@ func GetHookedUnicorn(root string, ram map[uint32](uint32), callback func(int, u
 		syscall_no, _ := mu.RegRead(uc.MIPS_REG_V0)
 		v0 := uint64(0)
 		if syscall_no == 4020 {
+			// getpid
 			oracle_hash, _ := mu.MemRead(0x30001000, 0x20)
 			hash := common.BytesToHash(oracle_hash)
 			key := fmt.Sprintf("%s/%s", root, hash)
