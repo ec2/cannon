@@ -6,6 +6,7 @@ use sha3::{Digest, Sha3_256};
 use trie::Change;
 use vm::Bytes32;
 
+mod iommu;
 mod vm;
 
 pub enum Tx {

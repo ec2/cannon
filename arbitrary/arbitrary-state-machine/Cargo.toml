@@ -12,6 +12,8 @@ ethereum-trie = "0.5.0"
 ethereum-bigint = "0.2.9"
 sha3 = "0.6.0"
 hex = "0.4.2"
+libc = "0.2.132"
+once_cell = "1.14"
 
 [dev-dependencies]
 flipper = { path = "../contracts/flipper", artifact = "cdylib", target = "wasm32-unknown-unknown" }
