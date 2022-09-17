@@ -65,17 +65,18 @@ pub fn execute(block: Block, mut pre_state: GlobalState) -> GlobalState {
                 apply_changes(&mut post_state.state, change);
 
                 // Execute contract
-                vm::execute(contract_state, &code, calldata).expect("Deploy's call to execute failed");
+                vm::execute(contract_state, &code, calldata)
+                    .expect("Deploy's call to execute failed");
             }
             Tx::CallAndTransfer { address, calldata } => {
                 let keyed_addr = keyhash_with_prefix(b"ContractCode", &address);
                 // load wasm contract from global state
                 let p_state = &post_state.state;
-                
+
                 let wasm = trie::get(block.state_root, &p_state, &keyed_addr)
-                .expect("Error loading WASM contract")    
-                .expect("Trying to load WASM contract that doesn't exist")
-                .clone();
+                    .expect("Error loading WASM contract")
+                    .expect("Trying to load WASM contract that doesn't exist")
+                    .clone();
                 // instante new Ext
                 let ext = Box::new(ContractState::new(address));
                 vm::execute(ext, &wasm, calldata);
