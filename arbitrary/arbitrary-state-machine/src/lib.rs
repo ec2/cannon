@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use std::collections::HashMap;
 
 use bigint::H256;
@@ -31,7 +32,7 @@ impl Block {
 }
 pub fn execute(block: Block, mut pre_state: GlobalState) -> GlobalState {
     let mut post_state: GlobalState = pre_state;
-    for tx in block.txns.iter() {
+    for tx in block.txns {
         match tx {
             Tx::Deploy { code, calldata } => {
                 // generate new address Create2
@@ -40,8 +41,8 @@ pub fn execute(block: Block, mut pre_state: GlobalState) -> GlobalState {
                 // create a SHA3-256 object
                 let mut hasher = Sha3_256::default();
                 // write input message
-                hasher.input(code);
-                hasher.input(calldata);
+                hasher.input(&code);
+                hasher.input(&calldata);
 
                 let result = hasher.result();
                 let address = result.as_slice();
@@ -58,22 +59,26 @@ pub fn execute(block: Block, mut pre_state: GlobalState) -> GlobalState {
                     block.state_root,
                     &&post_state.state,
                     &hashed_contract_address,
-                    code,
+                    &code,
                 )
                 .expect("Failed to insert wasm code into state");
                 apply_changes(&mut post_state.state, change);
 
                 // Execute contract
-                vm::execute(contract_state, &code).expect("Deploy's call to execute failed");
+                vm::execute(contract_state, &code, calldata).expect("Deploy's call to execute failed");
             }
             Tx::CallAndTransfer { address, calldata } => {
                 let keyed_addr = keyhash_with_prefix(b"ContractCode", &address);
                 // load wasm contract from global state
-                let wasm = trie::get(block.state_root, &&post_state.state, &keyed_addr)
-                    .expect("Trying to load WASM contract that doesn't exist");
+                let p_state = &post_state.state;
+                
+                let wasm = trie::get(block.state_root, &p_state, &keyed_addr)
+                .expect("Error loading WASM contract")    
+                .expect("Trying to load WASM contract that doesn't exist")
+                .clone();
                 // instante new Ext
-                let ext = Box::new(ContractState::new(*address));
-                vm::execute(ext, calldata);
+                let ext = Box::new(ContractState::new(address));
+                vm::execute(ext, &wasm, calldata);
             }
         }
     }
