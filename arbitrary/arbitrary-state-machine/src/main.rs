@@ -6,44 +6,76 @@ use sha3::{Digest, Sha3_256};
 use trie::{Change, EMPTY_TRIE_HASH};
 use vm::Bytes32;
 // use rlp::{self, Encodable, Decodable};
-use rlp::{self, Decodable};
+use rlp::{self, Decodable, Encodable};
 
 mod iommu;
 mod vm;
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct Tx {
     source: H256,
     dest: H256,
     amount: U256,
 }
-
+#[derive(Default, Debug, Clone)]
 pub struct Block {
     parent_hash: H256,
     state_root: H256,
     txns: Vec<Tx>,
 }
+trait BlockOracle {
+    fn get_block_by_hash (&self, hash: &H256) -> Option<&Block>;
+}
 
-#[derive(Clone)]
+#[derive(Default, Debug)]
+pub struct MockBlockOracle {
+    blocks: HashMap<H256, Block>
+}
+
+impl BlockOracle for MockBlockOracle {
+    fn get_block_by_hash (&self, hash: &H256) -> Option<&Block>{
+        self.blocks.get(hash)
+    }
+}
+impl MockBlockOracle {
+    fn insert_block (&mut self, block: Block) -> H256 {
+        let hash = block.hash();
+        self.blocks.insert(hash, block);
+        hash
+    }
+}
+
+impl Block {
+    // RLP encodes block and then hashes it
+    fn hash(&self) -> H256{
+        let encoded_block = rlp::encode(&self);
+        let mut hasher = Sha3_256::default();
+         hasher.input(&encoded_block);
+        let out = hasher.result();
+        let mut hash = H256::new();
+        H256::clone_from_slice(&mut hash, &out);
+        hash
+    }
+}
+
+#[derive(Clone, Default)]
 pub struct StateTrie {
     state: HashMap<H256, Vec<u8>>,
 }
 
-// impl Encodable for Tx {
-//     fn rlp_append(&self, s: &mut rlp::RlpStream) {
-//         let mut bytes:[u8;32] = [0;32];
-//         self.amount.to_big_endian(&mut bytes);
-//         s.append(&self.source.as_ref());
-//         s.append(&self.dest.as_ref());
-//         s.append(bytes);
-//     }
-// }
-// impl Encodable for Block {
-//     fn rlp_append(&self, s: &mut rlp::RlpStream) {
-//         s.append(&self.parent_hash.as_ref());
-//         s.append(&self.state_root.as_ref());
-//         s.append_list(&self.txns);
-//     }
-// }
+impl Encodable for Tx {
+    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.append(&self.source.as_ref());
+        s.append(&self.dest.as_ref());
+        s.append(&self.amount);
+    }
+}
+impl Encodable for &Block {
+    fn rlp_append(&self, s: &mut rlp::RlpStream) {
+        s.append(&self.parent_hash.as_ref());
+        s.append(&self.state_root.as_ref());
+        s.append_list(&self.txns);
+    }
+}
 impl Decodable for Tx {
     fn decode(rlp: &rlp::UntrustedRlp) -> Result<Self, rlp::DecoderError> {
         let source = rlp.as_val()?;
@@ -107,13 +139,13 @@ pub fn execute_txs(trie_db: &StateTrie, prev_state_root: H256, txs: Vec<Tx>) -> 
         );
 
         if amount > sender_bal {
-            panic!("Sender balance too low");
+            panic!("Sender {} balance too low", sender);
         }
         // Subtract amount from sender
         sender_bal = sender_bal - amount;
 
         // Read RLP encoded balance of Receiver from State Trie and add amount to send
-        let receiver_bal: U256 = match trie::get(prev_state_root, &&post_trie.state, &sender) {
+        let receiver_bal: U256 = match trie::get(prev_state_root, &&post_trie.state, &receiver) {
             Ok(Some(bal)) => rlp::decode::<U256>(bal) + amount,
             // Unintialized Account, populate state trie
             Ok(None) => {
@@ -149,10 +181,8 @@ pub fn execute_txs(trie_db: &StateTrie, prev_state_root: H256, txs: Vec<Tx>) -> 
 
 // The state_root of the block should be the empty hash right now because we
 // calculate the new state_root in this routine.
-fn execute_block(state: &StateTrie, block: Block) -> (Block, StateTrie) {
-    let prev_block = iommu::preimage(block.parent_hash)
-        .expect("Could not find previous block in preimage oracle");
-    let prev_block: Block = rlp::decode::<Block>(&prev_block);
+fn execute_block(state: &StateTrie, block: Block, oracle: Box<dyn BlockOracle>) -> (Block, StateTrie) {
+    let prev_block = get_block_by_hash(block.parent_hash, oracle);
     let prev_state_root = prev_block.state_root;
 
     let (new_root, new_trie) = execute_txs(state, prev_state_root, block.txns.clone());
@@ -166,7 +196,73 @@ fn execute_block(state: &StateTrie, block: Block) -> (Block, StateTrie) {
         new_trie,
     )
 }
+
+pub fn create_initial_state() -> (StateTrie, H256, Block) {
+    let empty_block_hash = Block::default().hash();
+
+    let mut state: StateTrie = Default::default();
+    let mut block: Block = Default::default();
+    block.parent_hash = empty_block_hash;
+    let root: H256 = H256::zero();
+
+    // Account 1 has address 1
+    let acc_1: H256 = 1.into();
+    // add 1 account with balance 100
+    let (root, changes) =
+        trie::insert_empty::<&'_ HashMap<H256, Vec<u8>>>(&acc_1, &rlp::encode(&(U256::from(100))));
+    block.state_root = root;
+    
+
+    // update state
+    apply_changes(&mut state, changes);
+    (state, root, block)
+}
+
+pub fn get_block_by_hash(block_hash: H256, oracle: Box<dyn BlockOracle>) -> Block {
+    //make work with unicorn, native, wtc... 
+    // let prev_block = iommu::preimage(block_hash)
+    //     .expect("Could not find previous block in preimage oracle");
+    // let prev_block: Block = rlp::decode::<Block>(&prev_block);
+
+    //mock
+    oracle.get_block_by_hash(&block_hash).expect("Couldn't find block").clone()
+}
+
+
 pub fn main() {
+    let mut blockchain = Box::new(MockBlockOracle::default());
+
+    let (state, root, block) = create_initial_state();
+    println!("Root 1: {:?}", root);
+    println!("State 1: {:?}", state.state);
+    println!("Block 1: {:?}", block);
+
+    let hash = blockchain.insert_block(block);
+
+    // New block incoming:
+    let b2 = Block {
+        parent_hash: hash,
+        state_root: Default::default(),
+        txns: vec![
+            Tx {
+                source: 1.into(),
+                dest: 2.into(),
+                amount: 20.into(),
+            }
+        ],
+    };
+    let (block, state) = execute_block(&state, b2, blockchain);
+
+    println!("Root 2: {:?}", root);
+    println!("State 2: {:?}", state.state);
+    println!("Block 2: {:?}", block);
+
+    let acc1: H256 = 1.into();
+    let acc2: H256 = 2.into();
+    println!("Bal1: {}", rlp::decode::<U256>(trie::get(block.state_root, &&state.state, &acc1).unwrap().unwrap()));
+    println!("Bal2: {}", rlp::decode::<U256>(trie::get(block.state_root, &&state.state, &acc2).unwrap().unwrap()));
+
+
     // println!("Fuck");
     // let wasm =
     //     include_bytes!("../../contracts/target/wasm32-unknown-unknown/release/flipper.wasm");
