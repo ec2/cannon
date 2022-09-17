@@ -127,11 +127,16 @@ fn populate_linker(
 
 /// Executes the given wasm contract.
 pub fn execute(ext: Box<dyn Ext>, wasm: &[u8], calldata: Vec<u8>) -> anyhow::Result<()> {
+    println!("vm errrrrrr");
     let engine = Engine::default();
+    println!("vm errrrrrr");
     let module = Module::new(&engine, wasm)?;
+    println!("vm errrrrrr");
     let state = VmState::new(ext);
+    println!("vm errrrrrr");
     let mut store = Store::new(&engine, state.clone());
 
+    println!("vm errrrrrr");
     // Allocate 16 wasm pages of memory for the contract. Each wasm page is 64 KiB. Allow up to 32
     // pages.
     let memory =
@@ -160,7 +165,7 @@ pub fn execute(ext: Box<dyn Ext>, wasm: &[u8], calldata: Vec<u8>) -> anyhow::Res
     memory
         .write(&mut store, 36, &calldata)
         .map_err(handle_memory_err)?;
-
+    println!("vm errrrrrr");
     let mut linker = populate_linker(&mut store, memory)?;
 
     let instance = linker.instantiate(&mut store, &module)?.start(&mut store)?;

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use bigint::H256;
 use sha3::{Digest, Sha3_256};
-use trie::Change;
+use trie::{Change, EMPTY_TRIE_HASH};
 use vm::Bytes32;
 
 mod iommu;
@@ -21,7 +21,7 @@ pub struct Block {
 
 // Wasm Contracts: Hash(b"ContractCode" + blob)
 // Account states: A
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct GlobalState {
     state: HashMap<H256, Vec<u8>>,
 }
@@ -66,6 +66,7 @@ pub fn execute(block: Block, pre_state: GlobalState) -> GlobalState {
                 apply_changes(&mut post_state.state, change);
 
                 // Execute contract
+                println!("About to execute contract");
                 vm::execute(contract_state, &code, calldata)
                     .expect("Deploy's call to execute failed");
             }
@@ -137,4 +138,17 @@ impl vm::Ext for ContractState {
         apply_changes(&mut self.database, change);
         self.root = root;
     }
+}
+
+pub fn main () {
+    println!("Fuck");
+    let wasm =
+        include_bytes!("../../contracts/target/wasm32-unknown-unknown/release/flipper.wasm");
+    let tx1 = Tx::Deploy { code: wasm.to_vec(), calldata: [1u8;32].to_vec()};
+    let b1 = Block::new(vec![tx1], EMPTY_TRIE_HASH);
+    let global_state = GlobalState::default();
+    println!("Fuck3");
+    let post_state = execute(b1, global_state);
+
+    println!("{:?}", post_state);
 }
