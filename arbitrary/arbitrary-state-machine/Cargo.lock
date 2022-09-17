@@ -15,6 +15,7 @@ dependencies = [
  "anyhow",
  "ethereum-bigint",
  "ethereum-trie",
+ "sha3",
  "wasmi",
 ]
 
