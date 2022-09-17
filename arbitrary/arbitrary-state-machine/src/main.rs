@@ -1,154 +1,181 @@
 #![allow(dead_code)]
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash, io::SeekFrom};
 
-use bigint::H256;
+use bigint::{H256, U256};
 use sha3::{Digest, Sha3_256};
 use trie::{Change, EMPTY_TRIE_HASH};
 use vm::Bytes32;
+// use rlp::{self, Encodable, Decodable};
+use rlp::{self, Decodable};
 
 mod iommu;
 mod vm;
-
-pub enum Tx {
-    Deploy { code: Vec<u8>, calldata: Vec<u8> },
-    CallAndTransfer { address: H256, calldata: Vec<u8> },
+#[derive(Clone)]
+pub struct Tx {
+    source: H256,
+    dest: H256,
+    amount: U256,
 }
 
 pub struct Block {
-    txns: Vec<Tx>,
+    parent_hash: H256,
     state_root: H256,
+    txns: Vec<Tx>,
 }
 
-// Wasm Contracts: Hash(b"ContractCode" + blob)
-// Account states: A
-#[derive(Default, Debug)]
-pub struct GlobalState {
+#[derive(Clone)]
+pub struct StateTrie {
     state: HashMap<H256, Vec<u8>>,
 }
 
-impl Block {
-    pub fn new(txns: Vec<Tx>, state_root: H256) -> Self {
-        Self { txns, state_root }
+// impl Encodable for Tx {
+//     fn rlp_append(&self, s: &mut rlp::RlpStream) {
+//         let mut bytes:[u8;32] = [0;32];
+//         self.amount.to_big_endian(&mut bytes);
+//         s.append(&self.source.as_ref());
+//         s.append(&self.dest.as_ref());
+//         s.append(bytes);
+//     }
+// }
+// impl Encodable for Block {
+//     fn rlp_append(&self, s: &mut rlp::RlpStream) {
+//         s.append(&self.parent_hash.as_ref());
+//         s.append(&self.state_root.as_ref());
+//         s.append_list(&self.txns);
+//     }
+// }
+impl Decodable for Tx {
+    fn decode(rlp: &rlp::UntrustedRlp) -> Result<Self, rlp::DecoderError> {
+        let source = rlp.as_val()?;
+        let dest = rlp.as_val()?;
+        let amount = rlp.as_val()?;
+        Ok(Self {
+            source,
+            dest,
+            amount,
+        })
     }
 }
-pub fn execute(block: Block, pre_state: GlobalState) -> GlobalState {
-    let mut post_state: GlobalState = pre_state;
-    for tx in block.txns {
-        match tx {
-            Tx::Deploy { code, calldata } => {
-                // generate new address Create2
-                // take Hash(code) and Hash(payload)
+impl Decodable for Block {
+    fn decode(rlp: &rlp::UntrustedRlp) -> Result<Self, rlp::DecoderError> {
+        let parent_hash: H256 = rlp.as_val()?;
+        let state_root: H256 = rlp.as_val()?;
+        let txns: Vec<Tx> = rlp.as_list()?;
+        Ok(Self {
+            parent_hash,
+            state_root,
+            txns,
+        })
+    }
+}
 
-                // create a SHA3-256 object
-                let mut hasher = Sha3_256::default();
-                // write input message
-                hasher.input(&code);
-                hasher.input(&calldata);
+// Applies Changes to State Trie to add and remove nodes
+pub fn apply_changes(map: &mut StateTrie, changes: Change) {
+    map.state.extend(changes.adds);
+    for del in changes.removes {
+        map.state
+            .remove(&del)
+            .expect("failed to apply remove changes from trie");
+    }
+}
 
-                let result = hasher.result();
-                let address = result.as_slice();
-                let mut contract_address_arr = [0; 32];
-                contract_address_arr.copy_from_slice(address);
+// Creates a fresh account with balance of 0 and returns new Trie root
+pub fn create_account(root: H256, trie_db: &mut StateTrie, account: H256, bal: U256) -> H256 {
+    let (root, changes) = trie::insert(root, &&trie_db.state, &account, &rlp::encode(&bal))
+        .expect("failed to insert to trie");
+    apply_changes(trie_db, changes);
+    root
+}
 
-                let contract_address = bigint::H256(contract_address_arr);
-                let hashed_contract_address =
-                    keyhash_with_prefix(b"ContractCode", &contract_address);
+// Takes the previous state trie, root, and list of txs.
+// The state_root of the block should be the empty hash right now because we
+// calculate the new state_root in this routine.
+pub fn execute_txs(trie_db: &StateTrie, prev_state_root: H256, txs: Vec<Tx>) -> (H256, StateTrie) {
+    let mut curr_root = prev_state_root.clone();
+    let mut post_trie = trie_db.clone();
 
-                // Creates new Contract and saves to trie and doesnt check for duplicate
-                let contract_state = Box::new(ContractState::new(contract_address));
-                let (_root, change) = trie::insert(
-                    block.state_root,
-                    &&post_state.state,
-                    &hashed_contract_address,
-                    &code,
-                )
-                .expect("Failed to insert wasm code into state");
-                apply_changes(&mut post_state.state, change);
+    for tx in txs {
+        let sender = tx.source;
+        let receiver = tx.dest;
+        let amount = tx.amount;
 
-                // Execute contract
-                println!("About to execute contract");
-                vm::execute(contract_state, &code, calldata)
-                    .expect("Deploy's call to execute failed");
-            }
-            Tx::CallAndTransfer { address, calldata } => {
-                let keyed_addr = keyhash_with_prefix(b"ContractCode", &address);
-                // load wasm contract from global state
-                let p_state = &post_state.state;
+        // Read RLP encoded balance of Sender from state trie
+        let mut sender_bal: U256 = rlp::decode(
+            trie::get(prev_state_root, &&post_trie.state, &sender)
+                .expect("Failed to retrieve sender bal from trie")
+                .expect("Sender balance doesnt exist"),
+        );
 
-                let wasm = trie::get(block.state_root, &p_state, &keyed_addr)
-                    .expect("Error loading WASM contract")
-                    .expect("Trying to load WASM contract that doesn't exist")
-                    .clone();
-                // instante new Ext
-                let ext = Box::new(ContractState::new(address));
-                vm::execute(ext, &wasm, calldata);
-            }
+        if amount > sender_bal {
+            panic!("Sender balance too low");
         }
-    }
-    post_state
-}
+        // Subtract amount from sender
+        sender_bal = sender_bal - amount;
 
-fn keyhash_with_prefix(prefix: &[u8], key: &[u8]) -> Vec<u8> {
-    let mut h_key = Vec::with_capacity(prefix.len() + key.len());
-    h_key.extend_from_slice(prefix);
-    h_key.extend_from_slice(key);
-    h_key
-}
-fn apply_changes(state: &mut HashMap<H256, Vec<u8>>, changes: Change) {
-    state.extend(changes.adds);
-    for del in changes.removes.iter() {
-        // Do we need to care if were deleting something that doesnt exist? I mean it should exist.
-        state
-            .remove(del)
-            .expect("Shouldn't delete something that doesn't exist!");
-    }
-}
-pub struct ContractState {
-    address: H256,
-    database: HashMap<H256, Vec<u8>>,
-    root: H256,
-}
+        // Read RLP encoded balance of Receiver from State Trie and add amount to send
+        let receiver_bal: U256 = match trie::get(prev_state_root, &&post_trie.state, &sender) {
+            Ok(Some(bal)) => rlp::decode::<U256>(bal) + amount,
+            // Unintialized Account, populate state trie
+            Ok(None) => {
+                let root = create_account(curr_root, &mut post_trie, receiver, amount);
+                curr_root = root;
+                amount
+            }
+            Err(e) => {
+                panic!("Failed to get receiver: {} bal: {:?}", receiver, e)
+            }
+        };
 
-impl ContractState {
-    pub fn new(address: H256) -> Self {
-        Self {
-            address,
-            root: trie::EMPTY_TRIE_HASH,
-            database: Default::default(),
-        }
-    }
-}
+        // Update Accounts with new balances
+        let (root, changes_a) = trie::insert(
+            curr_root,
+            &&post_trie.state,
+            &receiver,
+            &rlp::encode(&receiver_bal),
+        )
+        .expect("Failed to update receiver balance");
+        apply_changes(&mut post_trie, changes_a);
 
-impl vm::Ext for ContractState {
-    fn get(&self, key: &Bytes32) -> Bytes32 {
-        let db = &self.database;
-        let h_key = keyhash_with_prefix(&self.address, key);
-        let value = trie::get(self.root, &db, &h_key)
-            .expect("Db get Error")
-            .expect("Db get None");
-        let mut ret = [0; 32];
-        ret.copy_from_slice(value);
-        ret
+        let (root, changes_b) =
+            trie::insert(root, &&post_trie.state, &sender, &rlp::encode(&sender_bal))
+                .expect("Failed to update sender bal");
+        apply_changes(&mut post_trie, changes_b);
+
+        curr_root = root;
     }
 
-    fn set(&mut self, key: &Bytes32, value: &Bytes32) {
-        let h_key = keyhash_with_prefix(&self.address, key);
-        let db = &self.database;
-        let (root, change) = trie::insert(self.root, &db, &h_key, value).expect("Db Set Error");
-        apply_changes(&mut self.database, change);
-        self.root = root;
-    }
+    (curr_root, post_trie)
 }
 
-pub fn main () {
-    println!("Fuck");
-    let wasm =
-        include_bytes!("../../contracts/target/wasm32-unknown-unknown/release/flipper.wasm");
-    let tx1 = Tx::Deploy { code: wasm.to_vec(), calldata: [1u8;32].to_vec()};
-    let b1 = Block::new(vec![tx1], EMPTY_TRIE_HASH);
-    let global_state = GlobalState::default();
-    println!("Fuck3");
-    let post_state = execute(b1, global_state);
+// The state_root of the block should be the empty hash right now because we
+// calculate the new state_root in this routine.
+fn execute_block(state: &StateTrie, block: Block) -> (Block, StateTrie) {
+    let prev_block = iommu::preimage(block.parent_hash)
+        .expect("Could not find previous block in preimage oracle");
+    let prev_block: Block = rlp::decode::<Block>(&prev_block);
+    let prev_state_root = prev_block.state_root;
 
-    println!("{:?}", post_state);
+    let (new_root, new_trie) = execute_txs(state, prev_state_root, block.txns.clone());
+
+    (
+        Block {
+            parent_hash: block.parent_hash,
+            state_root: new_root,
+            txns: block.txns,
+        },
+        new_trie,
+    )
+}
+pub fn main() {
+    // println!("Fuck");
+    // let wasm =
+    //     include_bytes!("../../contracts/target/wasm32-unknown-unknown/release/flipper.wasm");
+    // let tx1 = Tx::Deploy { code: wasm.to_vec(), calldata: [1u8;32].to_vec()};
+    // let b1 = Block::new(vec![tx1], EMPTY_TRIE_HASH);
+    // let global_state = GlobalState::default();
+    // println!("Fuck3");
+    // let post_state = execute(b1, global_state);
+
+    // println!("{:?}", post_state);
+    println!("hello");
 }

@@ -14,6 +14,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ethereum-bigint",
+ "ethereum-rlp",
  "ethereum-trie",
  "hex",
  "libc",
